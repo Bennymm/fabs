@@ -1,0 +1,1403 @@
+---
+title: "FABS Fish Diversity Summaries"
+author: "Ben Millard-Martin"
+date: '`r date()`'
+output:
+  html_document:
+    theme: cosmo
+    code_folding: hide
+    toc: true
+    toc_float: true
+    echo: true
+    collapse: true
+---
+
+# Setup
+
+These blocks of code sets base for the subsequent analyses:  
+- loads all necessary packages   
+- set working directory  
+- read in diversity abundance, diversity length, ysi and habitat  
+- create wide data for Vegan package  
+- recreate long data with 0 observations  
+- clean ysi data(remove duplicates)  
+- create wide temperature data from ysi data   
+- merge temperature and habitat data with diversity abundance  
+- assign levels and names to month objects  
+
+### Load Packages
+```{r, message=FALSE, warning= FALSE}
+# load packages
+rm(list=ls())
+library("tidyverse", lib.loc="~/R/win-library/3.4")
+library("vegan", lib.loc="~/R/win-library/3.4")
+library("BiodiversityR", lib.loc="~/R/win-library/3.4")
+library("knitr", lib.loc="~/R/win-library/3.4")
+library("yaml", lib.loc="~/R/win-library/3.4")
+library("rmarkdown", lib.loc="~/R/win-library/3.4")
+library("magrittr", lib.loc="~/R/win-library/3.4")
+library("lubridate", lib.loc="~/R/win-library/3.4")
+library("TropFishR", lib.loc="~/R/win-library/3.4")
+```
+
+### Set working directory
+```{r}
+# make fabsdivlength name of and create working file 
+#setwd("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data")
+```
+
+### Read in data
+```{r}
+# read in diversity abundnce, diversity length, ysi and habitat data
+da      <- read.csv ("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data/da.csv")
+dl      <- read.csv ("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data/dl.csv")
+habitat <- read.csv ("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data/habitat.csv")
+ysi     <- read.csv ("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data/ysi.csv")
+```
+
+###  Reformat data  
+- create wide data  
+- clean YSI data  
+- extract temperature data  
+- merge temperature and habitat data with diversity abundance data  
+- create new month labels
+
+```{r}
+#create da.wide
+da.wide <- da %>%
+  group_by(year, month, day, site, species) %>%
+  summarise(abundance1 = sum
+            (abundance, na.rm = TRUE)
+            )%>%
+  spread("species", "abundance1")
+#replace na with 0
+da.wide[is.na(da.wide)] <- 0
+#create long data with null observations
+da.long <- gather(da.wide, species, abundance, argo:yero)
+
+#remove replicates and duplicates from ysi
+ysi <- ysi[!(ysi$replicate == 2), ]              
+ysi$replicate <- NULL
+ysi <- unique(ysi[ ,1:10])
+
+#create temperature wide data from ysi data; can do with salinity and ph also
+temp.wide <- ysi
+#remove other variables(ph, salinity)
+temp.wide[8:10] <- NULL
+#remove depth
+temp.wide[6] <- NULL
+#spread to wide format
+temp.wide %<>%
+  group_by(site, year, month, day, location) %>%
+  spread("location", "temp")
+
+#merge temperature data
+da.wide.habitat.env <- merge(da.wide, temp.wide,  
+                             by = c("year", "month", "day", "site"), 
+                             all = TRUE)
+#merge habitat data
+da.wide.habitat.env <- merge(da.wide.habitat.env, habitat, by = "site")
+da.wide.habitat.env[5] <- NULL
+
+#assign levels to month
+da.wide.habitat.env$month <- factor(da.wide.habitat.env$month, 
+                                    levels = c(1,2,3,4,5,6,7,8,9,10,11,12), 
+                                    labels = c("Jan",
+                                               "Feb",
+                                               "Mar",
+                                               "Apr",
+                                               "May",
+                                               "Jun",
+                                               "Jul",
+                                               "Aug",
+                                               "Sep",
+                                               "Oct",
+                                               "Nov*",
+                                               "Dec"))
+
+da.long$month <- factor(da.long$month, 
+                                    levels = c(1,2,3,4,5,6,7,8,9,10,11,12), 
+                                    labels = c("Jan",
+                                               "Feb",
+                                               "Mar",
+                                               "Apr",
+                                               "May",
+                                               "Jun",
+                                               "Jul",
+                                               "Aug",
+                                               "Sep",
+                                               "Oct",
+                                               "Nov*",
+                                               "Dec"))
+#create date variable for TropFishR
+#multiple monthly sample events justify bimonthly sample units
+dl.month.dup <- dl  
+dl.month.dup$bimonth <- if_else(dl.month.dup$day < 15, 7, 22)
+dl.month.dup$date <- ymd(paste(dl.month.dup$year, dl.month.dup$month, dl.month.dup$bimonth))
+
+#assign levels to month
+dl$month <- factor(dl$month, 
+                   levels = c(1,2,3,4,5,6,7,8,9,10,11,12), 
+                   labels = c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))
+
+#average lengths
+dl.year.month.core <- dl
+dl.year.month.core <-
+filter(dl.year.month.core, site == "ssp" | site == "hdo" | site == "pba" | site == "chp" | site == "ppo" | site == "wfb") %>%
+  group_by(year, month, species) %>%
+  summarise(se = sd(length)/sqrt((length(month))), length = mean(length))
+```
+
+# Individual Species {.tabset}
+
+The following presents seasonal abundance and length data for several of the more common species. Abundance for individual species is calculated as the mean of total catch for a site visit(seine sets are lumped together). Length is fork length(FL). Error bars represent standard error of the mean. Summaries are constrained to core sites only.  
+Length frequency is presented both as absolute (all years and all months) and seasonally (bimonthly). Seasonal mean length is also presented where applicable (only one cohort present).
+
+```{r}
+#filter core sites; generate SE
+da.long.year.month.core <- da.long %>%
+  filter(site == "ssp" | site == "hdo" | site == "pba" | site == "chp" | site == "ppo" | site == "wfb") %>%
+  group_by(year, month, species) %>%
+  summarise(se = sd(abundance)/sqrt((length(species))), abundance = mean(abundance))
+
+#length frequency graphics function by year month for individual species
+##function of Species and Length filter(outliers)
+lfq_year_month <- function(Species, Length) {
+  plotlfq <-  dl.temp <- filter(dl.month.dup, species == Species)
+  dl.temp <- filter(dl.temp, site == "ssp" | site == "hdo" | site == "pba" | site == "chp" | site == "ppo" | site == "wfb")
+  dl.temp <- filter(dl.temp, length < Length)
+  dl.lfq  <- lfqCreate(dl.temp, Lname = "length", Dname = "date", Fname = NA, bin_size = 2,
+                       length_unit = "cm", plus_group = FALSE, aggregate_dates = FALSE,
+                       plot = FALSE)
+  plot(dl.lfq, Fname = "catch", ylab = "Length (mm)")
+}
+
+#seasonal mean length function for any species with standard error
+#only useful for species with single cohorts; doesn't work for pipefish, perch, herring, etc
+mean_length_seasonal <- function(Species) {
+filter(dl.year.month.core, species == Species) %>%
+  ggplot() +
+  aes(x = month, y = length, colour = factor(year), group = year) +
+  geom_point(size = 2.5, position = position_dodge(width = 0.25)) +
+  geom_line(position = position_dodge(width = 0.25)) +
+  geom_errorbar(aes(ymin = length - se,
+                    ymax = length + se), 
+                width = 0,
+                size = 1,
+                position = position_dodge(width = 0.25)) +
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        #legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1)) +
+  labs(x = "Month", y = expression("Mean Length"), colour = "year")
+}
+
+#the following is for less frequent species(indicator species)
+abundance_seasonal <- function(Species){
+  filter(da.long.year.month.core, species == Species) %>%
+    filter(year != "2018") %>%
+    filter(abundance > 0) %>%
+    ggplot() +
+    aes(x = month, y = abundance, colour = species, group = species) +
+    geom_point(size = 2.5, position = position_dodge(width = 0.25)) +
+    geom_line( position = position_dodge(width = 0.25)) +
+    geom_errorbar(aes(ymin = abundance - se,
+                      ymax = abundance + se), 
+                  width = 0,
+                  size = 1,
+                  position = position_dodge(width = 0.25))+
+    facet_wrap(~year)+
+    theme_bw() +
+    theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+          legend.position  = "none",
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          text             = element_text(size = 13, vjust = 0.1)) +
+    labs(x = "Month", y = expression(Abundance ~ "(mean count/site visit)"))
+}
+```
+
+### Rockfish {.tabset} 
+#### All rockfish (abundance) 
+* core sites  
+* error bars are standard error
+
+```{r}
+filter(da.long.year.month.core, species == "byro" | species == "cqbr" | species == "unro" | species == "coro" | species == "blro"
+       | species == "caro" | species == "boro" | species == "qbro" | species == "vero") %>%
+  filter(year != "2018") %>%
+  filter(abundance > 0) %>%
+  ggplot() +
+  aes(x = month, y = abundance, colour = factor(species, labels = c("Black",
+                                                                    "Black/Yellow",
+                                                                    "Boccacio",
+                                                                    "Canary",
+                                                                    "Copper",
+                                                                    "Copper/Quillback",
+                                                                    "Quillback",
+                                                                    "Unknown",
+                                                                    "Vermillion")), group = species) +
+  geom_point(size = 2.5, position = position_dodge(width = 0.25)) +
+  geom_line( position = position_dodge(width = 0.25)) +
+  geom_errorbar(aes(ymin = abundance - se,
+                    ymax = abundance + se), 
+                width = 0,
+                size = 1,
+                position = position_dodge(width = 0.25))+
+  facet_wrap(~year)+
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        #legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1)) +
+  labs(x = "Month", y = expression("Rockfish Abundance" ~ "(count/site visit)"), colour = "Species")
+```
+
+#### Excluding Black/Yellowtail Complex (abundance) 
+* core sites  
+* error bars are standard error 
+
+The most abundant species are removed to graphically inflate species of lower abundance.
+
+```{r}
+filter(da.long.year.month.core, species == "cqbr" | species == "unro" | species == "coro" | species == "blro"
+       | species == "caro" | species == "boro" | species == "qbro" | species == "vero") %>%
+  filter(year != "2018") %>%
+  filter(abundance > 0) %>%
+  ggplot() +
+  aes(x = month, y = abundance, colour = factor(species, labels = c("Black",
+                                                                    "Boccacio",
+                                                                    "Canary",
+                                                                    "Copper",
+                                                                    "Copper/Quillback",
+                                                                    "Quillback",
+                                                                    "Unknown",
+                                                                    "Vermillion")), group = species) +
+  geom_point(size = 2.5, position = position_dodge(width = 0.25)) +
+  geom_line( position = position_dodge(width = 0.25)) +
+  geom_errorbar(aes(ymin = abundance - se,
+                    ymax = abundance + se), 
+                width = 0,
+                size = 1,
+                position = position_dodge(width = 0.25))+
+  facet_wrap(~year)+
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        #legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1)) +
+  labs(x = "Month", y = expression("Rockfish Abundance" ~ "(count/site visit)"), colour = "Species")
+```
+
+#### Excluding Black/Yellowtail Complex, Copper/Quillback (abundance) 
+* core sites  
+* error bars are standard error 
+
+The most abundant species are removed to graphically inflate species of lower abundance.
+
+```{r}
+#rockfish seasonal; byro, cqbr, yellowtail excluded
+filter(da.long.year.month.core, species == "unro" | species == "coro" | species == "blro"
+       | species == "caro" | species == "boro" | species == "qbro") %>%
+  filter(year != "2018") %>%
+  filter(abundance > 0) %>%
+  ggplot() +
+  aes(x = month, y = abundance, colour = factor(species, labels = c("Black",
+                                                                    "Boccacio",
+                                                                    "Canary",
+                                                                    "Quillback",
+                                                                    "Unknown",
+                                                                    "Vermillion")), group = species) +
+  geom_point(size = 2.5, position = position_dodge(width = 0.25)) +
+  geom_line( position = position_dodge(width = 0.25)) +
+  geom_errorbar(aes(ymin = abundance - se,
+                    ymax = abundance + se), 
+                width = 0,
+                size = 1,
+                position = position_dodge(width = 0.25))+
+  facet_wrap(~year)+
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        #legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1)) +
+  labs(x = "Month", y = expression("Rockfish Abundance" ~ "(count/site visit)"), colour = "Species")
+```
+
+#### Copper-quillback Complex (length frequency) {.tabset} 
+##### Length Frequency  
+* core sites  
+* absolute (all years combined) and bimonthly
+
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+#length frequency graphics function by year month for individual species
+##function of Species and Length filter(outliers)
+lfq_year_month("cqbr", 1000)
+```
+
+##### Seasonal Mean Length 
+* core sites  
+* error bars are standard error
+
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+#execute above function
+#only useful for species with single cohorts; doesn't work for pipefish, perch, herring, etc
+mean_length_seasonal("cqbr")
+```
+
+#### Black-Yellow Complex (length frequency) {.tabset} 
+##### Length frequency  
+* core sites  
+* absolute (all years combined) and bimonthly
+
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+#length frequency graphics function by year month for individual species
+##function of Species and Length filter(outliers)
+lfq_year_month("byro", 1000)
+```
+
+##### Seasonal Mean Length 
+* core sites  
+* error bars are standard error
+
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+#execute above function
+#only useful for species with single cohorts; doesn't work for pipefish, perch, herring, etc
+mean_length_seasonal("byro")
+```
+
+### Other Species (no apparent seasonal differences) {.tabset}
+These species show no apparent seasonality with respects to numbers or recruitment. There appears to be a similar number from year to year and a similar size distribution. 
+
+#### Flatfish {.tabset} 
+##### Seasonal Abundance 
+* core sites
+* error bars are standard error
+
+```{r}
+#from species_individual.R
+filter(da.long.year.month.core, species == "enso" | species == "saso" |species == "pasa") %>%
+  filter(year != "2018") %>%
+  filter(abundance > 0) %>%
+  ggplot()  +
+  aes(x = month, y = abundance, colour = factor(species, labels = c("English Sole", 
+                                                                    "Sanddab", 
+                                                                    "Sand Sole")), group = species) +
+  geom_point(size = 2.5, position = position_dodge(width = 0.25)) +
+  geom_line( position = position_dodge(width = 0.25)) +
+  geom_errorbar(aes(ymin = abundance - se,
+                    ymax = abundance + se), 
+                width = 0,
+                size = 1,
+                position = position_dodge(width = 0.25))+
+  facet_wrap(~year)+
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        #legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1)) +
+  labs(x = "Month", y = expression("Flatfish Abundance" ~ "(count/site visit)"), colour = "Species")
+```
+
+##### English sole {.tabset} 
+###### Length frequency  
+* core sites  
+* absolute (all years combined) and bimonthly
+
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+#length frequency graphics function by year month for individual species
+##function of Species and Length filter(outliers)
+lfq_year_month("enso", 200)
+```
+
+###### Seasonal Mean Length 
+* core sites  
+* error bars are standard error  
+
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+#execute above function
+#only useful for species with single cohorts; doesn't work for pipefish, perch, herring, etc
+mean_length_seasonal("enso")
+```
+
+##### Sand sole {.tabset} 
+###### Length frequency  
+* core sites  
+* absolute (all years combined) and bimonthly
+
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+#length frequency graphics function by year month for individual species
+##function of Species and Length filter(outliers)
+lfq_year_month("saso", 200)
+```
+
+###### Seasonal Mean Length 
+* core sites  
+* error bars are standard error  
+
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+#execute above function
+#only useful for species with single cohorts; doesn't work for pipefish, perch, herring, etc
+mean_length_seasonal("saso")
+```
+
+##### Sanddab {.tabset} 
+###### Length frequency  
+* core sites  
+* absolute (all years combined) and bimonthly
+
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+#length frequency graphics function by year month for individual species
+##function of Species and Length filter(outliers)
+lfq_year_month("pasa", 200)
+```
+
+###### Seasonal Mean Length 
+* core sites  
+* error bars are standard error
+
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+#execute above function
+#only useful for species with single cohorts; doesn't work for pipefish, perch, herring, etc
+mean_length_seasonal("pasa")
+```
+
+#### Sandlance {.tabset}
+##### Seasonal Abundance 
+* core sites  
+* error bars are standard error
+
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("sand")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("sand", 1000)
+```
+
+#### Lingcod {.tabset} 
+##### Seasonal Abundance  
+* core sites  
+* error bars are standard error
+
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("ling")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("ling", 1000)
+```
+
+##### Seasonal Mean Length 
+* core sites  
+* error bars are standard error
+
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+#execute above function
+#only useful for species with single cohorts; doesn't work for pipefish, perch, herring, etc
+mean_length_seasonal("ling")
+```
+
+#### Herring {.tabset} 
+##### Seasonal Abundance  
+* core sites  
+* error bars are standard error
+ 
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("herr")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("herr", 1000)
+```
+
+#### Shiner Perch {.tabset} 
+##### Seasonal Abundance   
+* core sites  
+* error bars are standard error
+
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("shpe")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("shpe", 1000)
+```
+
+#### Bay Pipefish {.tabset} 
+##### Seasonal Abundance  
+* core sites  
+* error bars are standard error
+ 
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("bapi")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("bapi", 1000)
+```
+
+#### Kelp greenling {.tabset} 
+##### Seasonal Abundance  
+* core sites  
+* error bars are standard error
+ 
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("kegr")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("kegr", 1000)
+```
+
+#### Tidepool Sculpin {.tabset} 
+##### Seasonal Abundance  
+* core sites  
+* error bars are standard error
+ 
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("tisc")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("tisc", 100)
+```
+
+#### Buffalo Sculpin {.tabset} 
+##### Seasonal Abundance  
+* core sites  
+* error bars are standard error
+ 
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("busc")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("busc", 150)
+```
+
+#### Three-Spine Stickleback {.tabset} 
+##### Seasonal Abundance  
+* core sites  
+* error bars are standard error
+ 
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("thst")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("thst", 1000)
+```
+
+#### Staghorn Sculpin {.tabset} 
+##### Seasonal Abundance   
+* core sites  
+* error bars are standard error
+
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("stsc")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("stsc", 1000)
+```
+
+#### Black-Eyed Goby {.tabset} 
+##### Seasonal Abundance   
+* core sites  
+* error bars are standard error
+
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("blgo")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("blgo", 1000)
+```
+
+#### Bay Goby {.tabset} 
+##### Seasonal Abundance   
+* core sites  
+* error bars are standard error
+
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("bago")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("bago", 1000)
+```
+
+### Other Species (Annual differences) {.tabset}
+These species show strong annual diffences in abundance and/or recruitment. These could make for potential indicator species. More research into life history traits would be required.
+
+#### Crescent Gunnel {.tabset} 
+##### Seasonal Abundance   
+* core sites  
+* error bars are standard error
+
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("crgu")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("crgu", 1000)
+```
+
+#### Penpoint Gunnel {.tabset} 
+##### Seasonal Abundance   
+* core sites  
+* error bars are standard error
+
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("pegu")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("pegu", 1000)
+```
+
+#### Great Sculpin {.tabset} 
+##### Seasonal Abundance   
+* core sites  
+* error bars are standard error
+
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("grsc")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("grsc", 1000)
+```
+
+#### Silverspotted Sculpin {.tabset} 
+##### Seasonal Abundance   
+* core sites  
+* error bars are standard error
+
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("sisc")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("sisc", 1000)
+```
+
+#### Snake Prickleback {.tabset} 
+##### Seasonal Abundance   
+* core sites  
+* error bars are standard error
+
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+abundance_seasonal("snpr")
+```
+
+##### Length Frequency 
+* core sites  
+* absolute (all years combined) and bimonthly
+```{r, message=FALSE, warning= FALSE, results= "hide",fig.height = 7, fig.width = 15}
+lfq_year_month("snpr", 1000)
+```
+
+# Species Diversity
+```{r}
+#create derived variables for Shannon index and species richness 
+#new column; shannon H
+da.wide.habitat.env$shan <- diversity(
+  da.wide.habitat.env[(which(colnames(da.wide.habitat.env) == "argo")) : 
+                      (which(colnames(da.wide.habitat.env) == "yero"))],
+  index = "shannon")
+
+#new column; specnumber
+da.wide.habitat.env$abundance<- specnumber(
+  da.wide.habitat.env[(which(colnames(da.wide.habitat.env) == "argo")) :
+                      (which(colnames(da.wide.habitat.env) == "yero"))])
+```
+
+#### Species Accumulation Curve 
+(Kindt's exact method)  
+This demonstrates that we have pretty much plateaued in species accumulation. 
+Although, we occasionally find a new species, we only found two new species 
+this year.
+```{r}
+specaccum(da.wide.habitat.env[
+  (which(colnames(da.wide.habitat.env) == "argo")) : 
+  (which(colnames(da.wide.habitat.env) == "yero"))]) %>%
+plot(ci.type="polygon", ci.col="lightyellow", xlab = "site visits", ylab = "species number")
+```
+
+## Species Diversity (temporal and spatial) {.tabset}
+The following figures are two metrics (species richness and Shannons index) 
+of diversity filtered, sorted amd displayed in several ways. Richness is calculated as the 
+total number of species observed. Shannonds H take into account both richness and 
+evenness.  
+Nov*: This sampling event is unique in that it was done late at night and the species comosition is somewhat distinct. Results should be interpreted with caution.
+  
+### All sites, all years {.tabset}
+```{r}
+#diversity(spp.richness and shannons) by site and month; all sites
+da.month.diversity<- (group_by(da.wide.habitat.env, month, site))%>%
+  summarise_at(vars(shan:abundance), mean)
+```
+
+#### Species Richness    
+* all sites; all years  
+* * night sampling(november)
+
+```{r}
+#spp.richness
+ggplot(da.month.diversity) +
+  aes(x = month, y = abundance, colour = site, group = site) +
+  geom_point() +
+  geom_line() +
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1))+
+  labs(x = "Month", y = expression("Richness" ~ "(species count/site visit)"))
+```
+
+#### Shannons Index  
+all sites; all years
+```{r}
+#shannons
+ggplot(da.month.diversity) +
+  aes(x = month, y = shan, colour = site, group = site) +
+  geom_point() +
+  geom_line() +
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1)) +
+  labs(x = "Month", y = expression("Shannon's H" ~ "(Shannons H/site visit)"))
+```
+
+### Core sites, all years {.tabset}
+```{r}
+#diversity(spp.richness and shannons) by site and month; core sites
+da.month.diversity.core<- (group_by(da.wide.habitat.env, month, site))%>%
+  summarise_at(vars(shan:abundance), mean) %>%
+  filter(site == "ssp" | site == "hdo" | site == "pba" | site == "chp" | site == "ppo" | site == "wfb")
+```
+
+#### Species Richness  
+core sites; all years
+```{r}
+#spp.richness
+ggplot(da.month.diversity.core) +
+  aes(x = month, y = abundance, colour = site, group = site) +
+  geom_point() +
+  geom_line() +
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        #legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1))+
+  labs(x = "Month", y = expression("Richness" ~ "(species count/site visit)"))
+```
+
+#### Shannons Index  
+core sites; all years
+```{r}
+#shannons
+ggplot(da.month.diversity.core) +
+  aes(x = month, y = shan, colour = site, group = site) +
+  geom_point() +
+  geom_line() +
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        #legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1)) +
+  labs(x = "Month", y = expression("Shannon's H" ~ "(Shannons H/site visit)"))
+```
+
+### All sites by year {.tabset}
+```{r}
+#diversity(spp.richness and shannons) by year, site and month; all sites
+da.year<- (group_by(da.wide.habitat.env, year, month, site))%>%
+  summarise_at(vars(shan:abundance), mean)
+```
+
+#### Species Richness  
+all sites; all years
+```{r}
+#spp.richness
+ggplot(da.year) +
+  aes(x = month, y = abundance, colour = site, group = site) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~year) +
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1)) +
+  labs(x = "Month", y = expression("Richness" ~ "(species count/site visit)"))
+```
+
+#### Shannons Index  
+all sites; all years
+```{r}
+#shannons H
+ggplot(da.year) +
+  aes(x = month, y = shan, colour = site, group = site) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~year) +
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1)) +
+  labs(x = "Month", y = expression("Shannon's H" ~ "(Shannons H/site visit)"))
+```
+
+### Core sites by year {.tabset}
+```{r}
+#diversity(spp.richness and shannons) by year, site and month; core sites
+da.year<- (group_by(da.wide.habitat.env, year, month, site))%>%
+  summarise_at(vars(shan:abundance), mean) %>%
+  filter(site == "ssp" | site == "hdo" | site == "pba" | site == "chp" | site == "ppo" | site == "wfb")
+```
+
+#### Species Richness  
+core sites; all years
+```{r}
+#spp.richness
+ggplot(da.year) +
+  aes(x = month, y = abundance, colour = site, group = site) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~year) +
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        #legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1)) +
+  labs(x = "Month", y = expression("Richness" ~ "(species count/site visit)"))
+```
+
+#### Shannons Index  
+core sites; all years
+```{r}
+#shannons H
+ggplot(da.year) +
+  aes(x = month, y = shan, colour = site, group = site) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~year) +
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        #legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1)) +
+  labs(x = "Month", y = expression("Shannon's H" ~ "(Shannons H/site visit)"))
+```
+
+## Species Diversity and Total Abundance (habitat delineation) {.tabset}  
+The following are several representations of diverity and abundance 
+by basic habitat type. Habitat was categorized by coarse metrics of substrate
+and vegetation. Ex) "unal.gravel" = unidentified algae with primarily 
+gravel substrate. Substrate appears to be a good proxy for exposure. Exposed sites 
+have a coarser substrate (sand and gravel), where sheltered sites have a mud (silt 
+and clay) substrate.  
+
+Only June, July and August data were used as richness appears 
+to be stable and at a plateau. Richness is calculated as the 
+total number of species observed. Shannonds H take into account both richness and 
+evenness.
+
+### Total fish counts
+summer months (June, July and August)
+```{r}
+#diversity by habitat type
+#total fish abundance
+da.long.habitat <- merge(da.long, habitat, by = "site", incomparables = NA)
+group_by(da.long.habitat, year, month, site, veg_subst) %>%
+  summarise(abundance1 = sum(abundance, na.rm = TRUE)) %>%
+  group_by(year, month, veg_subst) %>%
+  summarise(abundance = mean(abundance1), sd(abundance1)) %>%
+  filter(month == "Aug" | month == "Jul" | month == "Jun") %>%
+  ggplot() +
+  aes(x = veg_subst, y = abundance) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1))+
+  labs(x = "vegetation and substrate", y = expression("Fish abundance" ~ "(total fish count/site visit)"))
+```
+
+### Shannon H
+summer months (June, July and August)
+```{r}
+# shannon H by habitat
+filter(da.wide.habitat.env, month == "Aug" | month == "Jul" | month == "Jun") %>%
+  ggplot() +
+  aes(x = veg_subst, y = shan) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1))+
+  labs(x = "vegetation and substrate", y = expression("Shannons H"))
+```
+
+### Species richness
+summer months (June, July and August)
+```{r}
+# richness by habitat
+filter(da.wide.habitat.env, month == "Aug" | month == "Jul" | month == "Jun") %>%
+  ggplot() +
+  aes(x = veg_subst, y = abundance) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1))+
+  labs(x = "vegetation and substrate", y = expression("species count"))
+```
+
+# Community Dissimilarity {.tabset}
+NMDS (Bray-Curtis) ordinations of community composition for the community data.  
+```{r, message=FALSE, warning= FALSE}
+#extract species observations and sites only
+#summarise by site/month (analyses cannot account for day) 
+#merge habitat data
+da.obs <- da.wide.habitat.env
+da.obs <- da.obs[1:(which(colnames(da.obs) == "yero"))]
+da.obs%<>%
+  group_by(site, year, month)
+da.obs <- summarise_all(da.obs, funs(mean))
+da.obs <- merge(da.obs, habitat, by = "site")
+```
+
+## Between Habitats {.tabset}
+NMDS (Bray-Curtis) ordinations of community composition by year in the month of July. 
+Grouped by habitat type. Again, habitat was categorized by coarse metrics of substrate and 
+vegetation. Ex) "unal.gravel" = unidentified algae with primarily gravel substrate. Substrate 
+appears to be a good proxy for exposure. Exposed sites have a coarser substrate (sand and 
+gravel), where sheltered sites have a mud (silt and clay) substrate.
+
+### 2014
+all sites; July
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+#2014 July NMDS
+da.wide.habitat.env.july2014 <- filter(da.obs, 
+                                       year == "2014", 
+                                       month == "Jul")
+da.wide.habitat.env.july2014 <- column_to_rownames(da.wide.habitat.env.july2014, 
+                                                   var = "site")
+nmds.july2014 <- metaMDS(da.wide.habitat.env.july2014[(which(colnames(da.wide.habitat.env.july2014) == "argo")) :
+                                                      (which(colnames(da.wide.habitat.env.july2014) == "yero"))],
+                         k=3)
+ordiplot(nmds.july2014, 
+         display="site", 
+         type="n",
+         xlim = c(-2, 2))
+points(nmds.july2014, 
+       col="black", 
+       pch = (as.integer(da.wide.habitat.env.july2014$veg_subst))) 
+ordihull(nmds.july2014, da.wide.habitat.env.july2014$veg_subst, 
+         scaling = "symmetric",
+         lty=(as.integer(da.wide.habitat.env.july2014$veg_subst))) 
+legend("topright", levels(da.wide.habitat.env.july2014$veg_subst), 
+       pch=1:(length(levels(da.wide.habitat.env.july2014$veg_subst))), 
+       lty=1:(length(levels(da.wide.habitat.env.july2014$veg_subst))))
+```
+
+### 2015
+all sites; July
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+#2015 July NMDS
+da.wide.habitat.env.july2015 <- filter(da.obs, 
+                                       year == "2015", 
+                                       month == "Jul")
+da.wide.habitat.env.july2015 <- column_to_rownames(da.wide.habitat.env.july2015, 
+                                                   var = "site")
+nmds.july2015 <- metaMDS(da.wide.habitat.env.july2015[(which(colnames(da.wide.habitat.env.july2015) == "argo")) :
+                                                      (which(colnames(da.wide.habitat.env.july2015) == "yero"))], 
+                         k=3)
+ordiplot(nmds.july2015, 
+         display="site", 
+         type="n",
+         xlim = c(-2, 2))
+points(nmds.july2015, 
+       col="black", 
+       pch = (as.integer(da.wide.habitat.env.july2015$veg_subst))) 
+ordihull(nmds.july2015, da.wide.habitat.env.july2015$veg_subst, 
+         scaling = "symmetric",
+         lty=(as.integer(da.wide.habitat.env.july2015$veg_subst))) 
+legend("topright", levels(da.wide.habitat.env.july2015$veg_subst), 
+       pch=1:(length(levels(da.wide.habitat.env.july2015$veg_subst))), 
+       lty=1:(length(levels(da.wide.habitat.env.july2015$veg_subst))))
+```
+
+### 2016
+all sites; July
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+#2016 July NMDS
+da.wide.habitat.env.july2016 <- filter(da.obs, 
+                                       year == "2016", 
+                                       month == "Jul")
+da.wide.habitat.env.july2016 <- column_to_rownames(da.wide.habitat.env.july2016, 
+                                                   var = "site")
+nmds.july2016 <- metaMDS(da.wide.habitat.env.july2016[(which(colnames(da.wide.habitat.env.july2016) == "argo")) :
+                                                      (which(colnames(da.wide.habitat.env.july2016) == "yero"))], 
+                         k=3)
+ordiplot(nmds.july2016, 
+         display="site", 
+         type="n",
+         xlim = c(-2, 2))
+points(nmds.july2016, 
+       col="black", 
+       pch = (as.integer(da.wide.habitat.env.july2016$veg_subst))) 
+ordihull(nmds.july2016, da.wide.habitat.env.july2016$veg_subst, 
+         scaling = "symmetric",
+         lty=(as.integer(da.wide.habitat.env.july2016$veg_subst))) 
+legend("topright", levels(da.wide.habitat.env.july2016$veg_subst), 
+       pch=1:(length(levels(da.wide.habitat.env.july2016$veg_subst))), 
+       lty=1:(length(levels(da.wide.habitat.env.july2016$veg_subst))))
+```
+
+### 2017
+all sites; July
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+#2017 July NMDS
+da.wide.habitat.env.july2017 <- filter(da.obs, 
+                                       year == "2017", 
+                                       month == "Jul")
+da.wide.habitat.env.july2017 <- column_to_rownames(da.wide.habitat.env.july2017, 
+                                                   var = "site")
+nmds.july2017 <- metaMDS(da.wide.habitat.env.july2017[(which(colnames(da.wide.habitat.env.july2017) == "argo")) :
+                                                      (which(colnames(da.wide.habitat.env.july2017) == "yero"))], 
+                         k=3)
+ordiplot(nmds.july2017, 
+         display="sites", 
+         type="n",
+         xlim = c(-2, 2))
+points(nmds.july2017, 
+       col="black", 
+       pch = (as.integer(da.wide.habitat.env.july2017$veg_subst))) 
+ordihull(nmds.july2017, da.wide.habitat.env.july2017$veg_subst, 
+         scaling = "symmetric", 
+         lty=(as.integer(da.wide.habitat.env.july2017$veg_subst))) 
+legend("topright", levels(da.wide.habitat.env.july2017$veg_subst), 
+       pch=1:(length(levels(da.wide.habitat.env.july2017$veg_subst))), 
+       lty=1:(length(levels(da.wide.habitat.env.july2017$veg_subst)))) 
+```
+
+## Between Years and Habitat {.tabset}
+NMDS (Bray-Curtis) ordinations of community composition in summer months 
+(June, July and August). Grouped by year and habitat type. Only annual sites
+were used. Annual sites are those that were visited every year and includes core
+sites.
+
+### All habitats
+annual sites; summer months
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+#NMDS by year;summer months(June, July, August); all habitats
+da.wide.habitat.env.trial <- filter(da.obs,
+                                       month == "Jun" | month == "Jul" | month == "Aug",
+                                       site == "chp" | site == "fan1" | site == "fan3" | site == "gog1" | site == "hdp" |
+                                       site == "kis2" | site == "pba" | site == "ppo" | site == "sni1" | site == "sni2" |
+                                       site == "ssp" | site == "wfb")
+da.wide.habitat.env.trial$year <- as.factor(da.wide.habitat.env.trial$year)
+nmds.trial <- metaMDS(da.wide.habitat.env.trial[(which(colnames(da.wide.habitat.env.trial) == "argo")) :
+                                                  (which(colnames(da.wide.habitat.env.trial) == "yero"))], 
+                         k=3)
+ordiplot(nmds.trial, 
+         display="site", 
+         type="n") 
+points(nmds.trial, 
+       col="black", 
+       pch = (as.integer(da.wide.habitat.env.trial$year))) 
+ordihull(nmds.trial, da.wide.habitat.env.trial$year, 
+         scaling = "symmetric",
+         lty=(as.integer(da.wide.habitat.env.trial$year))) 
+legend("topright", levels(da.wide.habitat.env.trial$year), 
+       pch=1:(length(levels(da.wide.habitat.env.trial$year))), 
+       lty=1:(length(levels(da.wide.habitat.env.trial$year))))
+```
+
+### All seagrass
+annual sites; summer months
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+##NMDS by year; summer months(June, July, August); all seagrass
+da.wide.habitat.env.trial <- filter(da.obs,
+                                    month == "Jun" | month == "Jul" | month == "Aug",
+                                    site == "chp" | site == "fan1" | site == "fan3" | site == "gog1" | site == "hdp" |
+                                    site == "kis2" | site == "pba" | site == "ppo" | site == "sni1" | site == "sni2" |
+                                    site == "ssp" | site == "wfb", 
+                                    veg_subst == "zostera.mud" | veg_subst == "zostera.sand" | veg_subst == "zostera,gravel")
+da.wide.habitat.env.trial$year <- as.factor(da.wide.habitat.env.trial$year)
+nmds.trial <- metaMDS(da.wide.habitat.env.trial[(which(colnames(da.wide.habitat.env.trial) == "argo")) :
+                                                  (which(colnames(da.wide.habitat.env.trial) == "yero"))], 
+                      k=3)
+ordiplot(nmds.trial, 
+         display="site", 
+         type="n")
+points(nmds.trial, 
+       col="black", 
+       pch = (as.integer(da.wide.habitat.env.trial$year))) 
+ordihull(nmds.trial, da.wide.habitat.env.trial$year, 
+         scaling = "symmetric",
+         lty=(as.integer(da.wide.habitat.env.trial$year))) 
+legend("topright", levels(da.wide.habitat.env.trial$year), 
+       pch=1:(length(levels(da.wide.habitat.env.trial$year))), 
+       lty=1:(length(levels(da.wide.habitat.env.trial$year))))
+```
+
+### Seagrass Sheltered
+annual sites; summer months
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+##NMDS by year; summer months(June, July, August); sheltered seagrass
+da.wide.habitat.env.trial <- filter(da.obs,
+                                    month == "Jun" | month == "Jul" | month == "Aug",
+                                    site == "chp" | site == "fan1" | site == "fan3" | site == "gog1" | site == "hdp" |
+                                      site == "kis2" | site == "pba" | site == "ppo" | site == "sni1" | site == "sni2" |
+                                      site == "ssp" | site == "wfb", 
+                                    veg_subst == "zostera.mud")
+da.wide.habitat.env.trial$year <- as.factor(da.wide.habitat.env.trial$year)
+nmds.trial <- metaMDS(da.wide.habitat.env.trial[(which(colnames(da.wide.habitat.env.trial) == "argo")) :
+                                                  (which(colnames(da.wide.habitat.env.trial) == "yero"))], 
+                      k=3)
+ordiplot(nmds.trial, 
+         display="site", 
+         type="n")
+points(nmds.trial, 
+       col="black", 
+       pch = (as.integer(da.wide.habitat.env.trial$year))) 
+ordihull(nmds.trial, da.wide.habitat.env.trial$year, 
+         scaling = "symmetric",
+         lty=(as.integer(da.wide.habitat.env.trial$year))) 
+legend("topright", levels(da.wide.habitat.env.trial$year), 
+       pch=1:(length(levels(da.wide.habitat.env.trial$year))), 
+       lty=1:(length(levels(da.wide.habitat.env.trial$year))))
+```
+
+### Seagrass Exposed
+annual sites; summer months
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+##NMDS by year; summer months(June, July, August); exposed seagrass
+da.wide.habitat.env.trial <- filter(da.obs,
+                                    month == "Jun" | month == "Jul" | month == "Aug",
+                                    site == "chp" | site == "fan1" | site == "fan3" | site == "gog1" | site == "hdp" |
+                                      site == "kis2" | site == "pba" | site == "ppo" | site == "sni1" | site == "sni2" |
+                                      site == "ssp" | site == "wfb", 
+                                    veg_subst == "zostera.sand" | veg_subst == "zostera.gravel")
+da.wide.habitat.env.trial$year <- as.factor(da.wide.habitat.env.trial$year)
+nmds.trial <- metaMDS(da.wide.habitat.env.trial[(which(colnames(da.wide.habitat.env.trial) == "argo")) :
+                                                  (which(colnames(da.wide.habitat.env.trial) == "yero"))], 
+                      k=3)
+ordiplot(nmds.trial, 
+         display="site", 
+         type="n")
+points(nmds.trial, 
+       col="black", 
+       pch = (as.integer(da.wide.habitat.env.trial$year))) 
+ordihull(nmds.trial, da.wide.habitat.env.trial$year, 
+         scaling = "symmetric",
+         lty=(as.integer(da.wide.habitat.env.trial$year))) 
+legend("topright", levels(da.wide.habitat.env.trial$year), 
+       pch=1:(length(levels(da.wide.habitat.env.trial$year))), 
+       lty=1:(length(levels(da.wide.habitat.env.trial$year))))
+```
+
+### Sand
+annual sites; summer months
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+##NMDS by year; summer months(June, July, August); sandy habitat
+da.wide.habitat.env.trial <- filter(da.obs,
+                                    month == "Jun" | month == "Jul" | month == "Aug",
+                                    site == "chp" | site == "fan1" | site == "fan3" | site == "gog1" | site == "hdp" |
+                                      site == "kis2" | site == "pba" | site == "ppo" | site == "sni1" | site == "sni2" |
+                                      site == "ssp" | site == "wfb", 
+                                    veg_subst == "sand")
+da.wide.habitat.env.trial$year <- as.factor(da.wide.habitat.env.trial$year)
+nmds.trial <- metaMDS(da.wide.habitat.env.trial[(which(colnames(da.wide.habitat.env.trial) == "argo")) :
+                                                  (which(colnames(da.wide.habitat.env.trial) == "yero"))], 
+                      k=3)
+ordiplot(nmds.trial, 
+         display="site", 
+         type="n")
+points(nmds.trial, 
+       col="black", 
+       pch = (as.integer(da.wide.habitat.env.trial$year))) 
+ordihull(nmds.trial, da.wide.habitat.env.trial$year, 
+         scaling = "symmetric",
+         lty=(as.integer(da.wide.habitat.env.trial$year))) 
+legend("topright", levels(da.wide.habitat.env.trial$year), 
+       pch=1:(length(levels(da.wide.habitat.env.trial$year))), 
+       lty=1:(length(levels(da.wide.habitat.env.trial$year))))
+```
+
+# Temperature {.tabset}
+Several summaries of temperature (1 meter depth) filtered, sorted and displayed 
+in several ways.
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+#create temperature variable
+temp.summary<-
+  group_by(da.wide.habitat.env, year, month, site, veg_subst) %>%
+  summarise(temp = mean(b2))
+```
+
+## Monthly Temperature
+error bars are standard error
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+#monthly temperature by year and habitat type
+group_by(temp.summary, year, month, veg_subst) %>%
+  summarise(se = sd(temp)/sqrt((length(veg_subst))), temp = mean(temp), n()) %>%
+  filter( year == "2015" | year == "2016" | year == "2017") %>%
+  ggplot() +
+  aes(x = month, y = temp, colour = factor(veg_subst, labels = c("macro.sand",
+                                                                 "mud",
+                                                                 "sand",
+                                                                 "ulva.sand",
+                                                                 "unal.cobble",
+                                                                 "unal.gravel",
+                                                                 "unal.mud",
+                                                                 "unal.sand",
+                                                                 "zostera.gravel",
+                                                                 "zostera.mud",
+                                                                 "zostera.sand")), group = veg_subst) +
+  geom_point(size = 2.5, position = position_dodge(width = 0.25)) +
+  geom_line( position = position_dodge(width = 0.25)) +
+  geom_errorbar(aes(ymin = temp - se,
+                    ymax = temp + se), 
+                width = 0,
+                size = 1,
+                position = position_dodge(width = 0.25))+
+  facet_wrap(~year)+
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        #legend.position  = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1)) +
+  labs(x = "Month", y = expression("temperature"), colour = "veg_subst")
+```
+
+##Temperature by Habitat 
+summer; all sites
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+#Temperature by habitat type
+group_by(temp.summary, year, month, veg_subst)%>%
+  summarise(se = sd(temp)/sqrt((length(veg_subst))), temp = mean(temp), n()) %>%
+filter(month == "Aug" | month == "Jul" | month == "Jun") %>%
+ggplot() +
+aes(x = veg_subst, y = temp) +
+geom_boxplot() +
+facet_wrap(~year) +
+theme_bw() +
+theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+      legend.position  = "none",
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      text             = element_text(size = 13, vjust = 0.1))+
+labs(x = "vegetation and substrate", y = expression("temperature"))
+```
+
+##Temperature by Habitat
+Summer; core sites  
+error bars are standard error
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+#temperature by habitat type
+filter(temp.summary,
+       year != "2014",
+       month == "Jun" | month == "Jul", 
+       site == "ssp" | site == "hdo" | site == "pba" | site == "chp" | site == "ppo" | site == "wfb") %>%
+group_by(year, veg_subst)%>%
+  summarise(se = sd(temp, na.rm = TRUE)/sqrt((length(veg_subst))), 
+            temp = mean(temp, na.rm = TRUE), n()) %>%
+  ggplot() +
+  aes(x = veg_subst, y = temp, colour = factor(year, labels = c("2015",
+                                                                "2016",
+                                                                "2017")), group = year) +
+  geom_point(size = 2.5, 
+             position = position_dodge(width = 0.25)) +
+  geom_errorbar(aes(ymin = temp - se,
+                    ymax = temp + se), 
+                width = 0,
+                size = 1,
+                position = position_dodge(width = 0.25)) +
+  theme_bw() +
+  theme(axis.text.x      = element_text(size = 10, angle = 45, hjust = 1),
+        #legend.position= "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text             = element_text(size = 13, vjust = 0.1))+
+  labs(x = "vegetation and substrate", y = expression("temperature"), color = "Year")
+```
