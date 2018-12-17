@@ -15,24 +15,27 @@
 # 
 #
 # load packages
-library("tidyverse", lib.loc="~/R/win-library/3.4")
-library("dplyr", lib.loc="~/R/win-library/3.4")
-library("vegan", lib.loc="~/R/win-library/3.4")
-library("BiodiversityR", lib.loc="~/R/win-library/3.4")
-library("knitr", lib.loc="~/R/win-library/3.4")
-library("yaml", lib.loc="~/R/win-library/3.4")
-library("markdown", lib.loc="~/R/win-library/3.4")
-library("MASS", lib.loc="~/R/win-library/3.4")
-library("magrittr", lib.loc="~/R/win-library/3.4")
-library("lubridate", lib.loc="~/R/win-library/3.4")
-library("TropFishR", lib.loc="~/R/win-library/3.4")
+library("tidyverse", lib.loc="~/R/win-library/3.5")
+library("dplyr", lib.loc="~/R/win-library/3.5")
+library("vegan", lib.loc="~/R/win-library/3.5")
+library("BiodiversityR", lib.loc="~/R/win-library/3.5")
+library("knitr", lib.loc="~/R/win-library/3.5")
+library("yaml", lib.loc="~/R/win-library/3.5")
+library("markdown", lib.loc="~/R/win-library/3.5")
+library("MASS", lib.loc="~/R/win-library/3.5")
+library("magrittr", lib.loc="~/R/win-library/3.5")
+library("lubridate", lib.loc="~/R/win-library/3.5")
+library("rjags", lib.loc="~/R/win-library/3.5")
+library("TropFishR", lib.loc="~/R/win-library/3.5")
+library("mixtools", lib.loc="~/R/win-library/3.5")
+
 
 # make fabsdivlength name of and create working file 
 setwd("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data")
 
 # read in da, dl, ysi and habitat
-da      <- read.csv ("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data/da.csv")
-dl      <- read.csv ("dl.csv")
+da      <- read.csv ("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data/da2018.csv")
+dl      <- read.csv ("dl2018.csv")
 habitat <- read.csv ("habitat.csv")
 ysi     <- read.csv ("ysi.csv")
 
@@ -99,9 +102,9 @@ dl.year.month.core <-
 
 #create avgerage length variable and SE of length; filter core sites
 #same as above but for multiple cohorts(shpe)
-dl.year.month.core <- dl
-dl.year.month.core <-
-  filter(dl.year.month.core, site == "ssp" | site == "hdo" | site == "pba" | site == "chp" | site == "ppo" | site == "wfb") %>%
-  group_by(year, month, species) %>%
+dl.year.month.core.cohorts <- dl
+dl.year.month.core.cohorts <-
+  filter(dl.year.month.core.cohorts, site == "ssp" | site == "hdo" | site == "pba" | site == "chp" | site == "ppo" | site == "wfb") %>%
+  group_by(year, month, species, stage) %>%
   summarise(se = sd(length)/sqrt((length(species))), length = mean(length))
 

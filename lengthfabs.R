@@ -67,7 +67,7 @@ filter(dl, species == Species) %>%
   labs(x = "Length (mm)", y = expression("Count"), colour = "Year")
 }
 #execute above function
-lfq_July("herr")
+lfq_July("ling")
 
 
 

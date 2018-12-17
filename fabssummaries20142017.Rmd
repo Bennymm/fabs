@@ -1,5 +1,5 @@
 ---
-title: "FABS Fish Diversity Summaries"
+title: "FABS Fish Diversity Summaries2018"
 author: "Ben Millard-Martin"
 date: '`r date()`'
 output:
@@ -29,15 +29,18 @@ These blocks of code sets base for the subsequent analyses:
 ```{r, message=FALSE, warning= FALSE}
 # load packages
 rm(list=ls())
-library("tidyverse", lib.loc="~/R/win-library/3.4")
-library("vegan", lib.loc="~/R/win-library/3.4")
-library("BiodiversityR", lib.loc="~/R/win-library/3.4")
-library("knitr", lib.loc="~/R/win-library/3.4")
-library("yaml", lib.loc="~/R/win-library/3.4")
-library("rmarkdown", lib.loc="~/R/win-library/3.4")
-library("magrittr", lib.loc="~/R/win-library/3.4")
-library("lubridate", lib.loc="~/R/win-library/3.4")
-library("TropFishR", lib.loc="~/R/win-library/3.4")
+library("tidyverse", lib.loc="~/R/win-library/3.5")
+library("dplyr", lib.loc="~/R/win-library/3.5")
+library("vegan", lib.loc="~/R/win-library/3.5")
+library("BiodiversityR", lib.loc="~/R/win-library/3.5")
+library("knitr", lib.loc="~/R/win-library/3.5")
+library("yaml", lib.loc="~/R/win-library/3.5")
+library("markdown", lib.loc="~/R/win-library/3.5")
+#library("MASS", lib.loc="~/R/win-library/3.5")
+library("magrittr", lib.loc="~/R/win-library/3.5")
+library("lubridate", lib.loc="~/R/win-library/3.5")
+library("rjags", lib.loc="~/R/win-library/3.5")
+library("TropFishR", lib.loc="~/R/win-library/3.5")
 ```
 
 ### Set working directory
@@ -49,8 +52,8 @@ library("TropFishR", lib.loc="~/R/win-library/3.4")
 ### Read in data
 ```{r}
 # read in diversity abundnce, diversity length, ysi and habitat data
-da      <- read.csv ("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data/da.csv")
-dl      <- read.csv ("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data/dl.csv")
+da      <- read.csv ("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data/da2018.csv")
+dl      <- read.csv ("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data/dl2018.csv")
 habitat <- read.csv ("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data/habitat.csv")
 ysi     <- read.csv ("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data/ysi.csv")
 ```
@@ -197,7 +200,7 @@ filter(dl.year.month.core, species == Species) %>%
 #the following is for less frequent species(indicator species)
 abundance_seasonal <- function(Species){
   filter(da.long.year.month.core, species == Species) %>%
-    filter(year != "2018") %>%
+    filter(year != "2019") %>%
     filter(abundance > 0) %>%
     ggplot() +
     aes(x = month, y = abundance, colour = species, group = species) +
@@ -227,12 +230,12 @@ abundance_seasonal <- function(Species){
 ```{r}
 filter(da.long.year.month.core, species == "byro" | species == "cqbr" | species == "unro" | species == "coro" | species == "blro"
        | species == "caro" | species == "boro" | species == "qbro" | species == "vero") %>%
-  filter(year != "2018") %>%
+  filter(year != "2019") %>%
   filter(abundance > 0) %>%
   ggplot() +
   aes(x = month, y = abundance, colour = factor(species, labels = c("Black",
-                                                                    "Black/Yellow",
                                                                     "Boccacio",
+                                                                    "Black/Yellow",
                                                                     "Canary",
                                                                     "Copper",
                                                                     "Copper/Quillback",
@@ -265,7 +268,7 @@ The most abundant species are removed to graphically inflate species of lower ab
 ```{r}
 filter(da.long.year.month.core, species == "cqbr" | species == "unro" | species == "coro" | species == "blro"
        | species == "caro" | species == "boro" | species == "qbro" | species == "vero") %>%
-  filter(year != "2018") %>%
+  filter(year != "2019") %>%
   filter(abundance > 0) %>%
   ggplot() +
   aes(x = month, y = abundance, colour = factor(species, labels = c("Black",
@@ -303,7 +306,7 @@ The most abundant species are removed to graphically inflate species of lower ab
 #rockfish seasonal; byro, cqbr, yellowtail excluded
 filter(da.long.year.month.core, species == "unro" | species == "coro" | species == "blro"
        | species == "caro" | species == "boro" | species == "qbro") %>%
-  filter(year != "2018") %>%
+  filter(year != "2019") %>%
   filter(abundance > 0) %>%
   ggplot() +
   aes(x = month, y = abundance, colour = factor(species, labels = c("Black",
@@ -382,7 +385,7 @@ These species show no apparent seasonality with respects to numbers or recruitme
 ```{r}
 #from species_individual.R
 filter(da.long.year.month.core, species == "enso" | species == "saso" |species == "pasa") %>%
-  filter(year != "2018") %>%
+  filter(year != "2019") %>%
   filter(abundance > 0) %>%
   ggplot()  +
   aes(x = month, y = abundance, colour = factor(species, labels = c("English Sole", 
@@ -1159,6 +1162,33 @@ legend("topright", levels(da.wide.habitat.env.july2017$veg_subst),
        lty=1:(length(levels(da.wide.habitat.env.july2017$veg_subst)))) 
 ```
 
+### 2018
+all sites; July
+```{r, message=FALSE, warning= FALSE, results= "hide"}
+#2018 July NMDS
+da.wide.habitat.env.july2018 <- filter(da.obs, 
+                                       year == "2018", 
+                                       month == "Jul")
+da.wide.habitat.env.july2018 <- column_to_rownames(da.wide.habitat.env.july2018, 
+                                                   var = "site")
+nmds.july2018 <- metaMDS(da.wide.habitat.env.july2018[(which(colnames(da.wide.habitat.env.july2018) == "argo")) :
+                                                      (which(colnames(da.wide.habitat.env.july2018) == "yero"))], 
+                         k=3)
+ordiplot(nmds.july2018, 
+         display="sites", 
+         type="n",
+         xlim = c(-2, 2))
+points(nmds.july2018, 
+       col="black", 
+       pch = (as.integer(da.wide.habitat.env.july2018$veg_subst))) 
+ordihull(nmds.july2018, da.wide.habitat.env.july2018$veg_subst, 
+         scaling = "symmetric", 
+         lty=(as.integer(da.wide.habitat.env.july2018$veg_subst))) 
+legend("topright", levels(da.wide.habitat.env.july2018$veg_subst), 
+       pch=1:(length(levels(da.wide.habitat.env.july2018$veg_subst))), 
+       lty=1:(length(levels(da.wide.habitat.env.july2018$veg_subst)))) 
+```
+
 ## Between Years and Habitat {.tabset}
 NMDS (Bray-Curtis) ordinations of community composition in summer months 
 (June, July and August). Grouped by year and habitat type. Only annual sites
@@ -1385,7 +1415,8 @@ group_by(year, veg_subst)%>%
   ggplot() +
   aes(x = veg_subst, y = temp, colour = factor(year, labels = c("2015",
                                                                 "2016",
-                                                                "2017")), group = year) +
+                                                                "2017",
+                                                                "2018")), group = year) +
   geom_point(size = 2.5, 
              position = position_dodge(width = 0.25)) +
   geom_errorbar(aes(ymin = temp - se,

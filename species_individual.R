@@ -186,3 +186,6 @@ lfq_year_month("snpr", 1000)
 #reduced numbers through time
 abundance_seasonal("sisc")
 lfq_year_month("sisc", 150)
+
+
+
