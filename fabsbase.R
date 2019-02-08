@@ -15,10 +15,12 @@
 # 
 #
 # load packages
-library("tidyverse", lib.loc="~/R/win-library/3.5")
+rm(list=ls())
+
 library("dplyr", lib.loc="~/R/win-library/3.5")
 library("vegan", lib.loc="~/R/win-library/3.5")
 library("BiodiversityR", lib.loc="~/R/win-library/3.5")
+library("dismo", lib.loc="~/R/win-library/3.5")
 library("knitr", lib.loc="~/R/win-library/3.5")
 library("yaml", lib.loc="~/R/win-library/3.5")
 library("markdown", lib.loc="~/R/win-library/3.5")
@@ -28,7 +30,12 @@ library("lubridate", lib.loc="~/R/win-library/3.5")
 library("rjags", lib.loc="~/R/win-library/3.5")
 library("TropFishR", lib.loc="~/R/win-library/3.5")
 library("mixtools", lib.loc="~/R/win-library/3.5")
-
+library("labdsv", lib.loc="~/R/win-library/3.5")
+library("GGally", lib.loc="~/R/win-library/3.5")
+library("ppcor", lib.loc="~/R/win-library/3.5")
+library("gclus", lib.loc="~/R/win-library/3.5")
+library("psych", lib.loc="~/R/win-library/3.5")
+library("tidyverse", lib.loc="~/R/win-library/3.5")
 
 # make fabsdivlength name of and create working file 
 setwd("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data")
@@ -36,8 +43,8 @@ setwd("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data")
 # read in da, dl, ysi and habitat
 da      <- read.csv ("C:/Users/FABS/Desktop/Rwd_Ben/FABS/working_files/data/da2018.csv")
 dl      <- read.csv ("dl2018.csv")
-habitat <- read.csv ("habitat.csv")
-ysi     <- read.csv ("ysi.csv")
+habitat <- read.csv ("hakaiBS_habitat_20142018.csv")
+ysi     <- read.csv ("ysi2018.csv")
 
 #create da.wide
 da.wide <- da %>%
@@ -50,9 +57,14 @@ da.wide[is.na(da.wide)] <- 0
 da.long <- gather(da.wide, species, abundance, argo:yero)
 
 #remove replicates and duplicates from ysi
-ysi <- ysi[!(ysi$replicate == 2), ]              
-ysi$replicate <- NULL
-ysi <- unique(ysi[ ,1:10])
+#ysi <- ysi[!(ysi$replicate == 2), ]              
+#ysi$replicate <- NULL
+#ysi <- unique(ysi[ ,1:10])
+
+#create levels for factors followed by conversion of factors to integers for analysis
+habitat$exposure <- as.integer(factor(habitat$exposure, 
+                                      levels = c("vp", "p", "sp", "se", "e", "ve"), 
+                                      labels = c("vp", "p", "sp", "se", "e", "ve")))
 
 #create temperature wide data from ysi data; can do with salinity and ph also
 temp.wide <- ysi
@@ -64,14 +76,60 @@ temp.wide[6] <- NULL
 temp.wide %<>%
   group_by(site, year, month, day, location) %>%
   spread("location", "temp")
+colnames(temp.wide)[5:14] <- c("t.a0","t.b0","t.b1","t.c0","t.c1","t.c3","t.d0","t.d1","t.d10","t.d5")
 
-#merge temperature data
+#salinity
+salinity.wide <- ysi
+#remove other variables(ph, temp)
+salinity.wide[9:10] <- NULL
+#remove depth
+salinity.wide[6:7] <- NULL
+#spread to wide format
+salinity.wide %<>%
+  group_by(site, year, month, day, location) %>%
+  spread("location", "salinity")
+colnames(salinity.wide)[5:14] <- c("s.a0","s.b0","s.b1","s.c0","s.c1","s.c3","s.d0","s.d1","s.d10","s.d5")
+
+#ph
+ph.wide <- ysi
+#remove other variables(ph, salinity)
+ph.wide[10] <- NULL
+#remove depth
+ph.wide[6:8] <- NULL
+#spread to wide format
+ph.wide %<>%
+  group_by(site, year, month, day, location) %>%
+  spread("location", "ph")
+colnames(ph.wide)[5:14] <- c("p.a0","p.b0","p.b1","p.c0","p.c1","p.c3","p.d0","p.d1","p.d10","p.d5")
+
+
+#merge temperature, salinity and ph data
 da.wide.habitat.env <- merge(da.wide, temp.wide,  
                              by = c("year", "month", "day", "site"), 
                              all = TRUE)
+
+da.wide.habitat.env <- merge(da.wide.habitat.env, salinity.wide,  
+                             by = c("year", "month", "day", "site"), 
+                             all = TRUE)
+
+da.wide.habitat.env <- merge(da.wide.habitat.env, ph.wide,  
+                             by = c("year", "month", "day", "site"), 
+                             all = TRUE)
+
+environmental <- merge(temp.wide, salinity.wide,  
+                       by = c("year", "month", "day", "site"), 
+                       all = TRUE) %>%
+                  merge(ph.wide,  
+                        by = c("year", "month", "day", "site"), 
+                         all = TRUE)
+
+
 #merge habitat data
 da.wide.habitat.env <- merge(da.wide.habitat.env, habitat, by = "site")
 da.wide.habitat.env[5] <- NULL
+
+#new variables: temperature and salinity differentials; select location (add_column)
+da.wide.habitat.env <- add_column(da.wide.habitat.env, "t.diff" = (da.wide.habitat.env$t.a0-da.wide.habitat.env$t.d5), .after = "t.d5")
 
 #assign levels to month
 da.wide.habitat.env$month <- factor(da.wide.habitat.env$month, 
@@ -81,6 +139,7 @@ da.wide.habitat.env$month <- factor(da.wide.habitat.env$month,
 da.long$month <- factor(da.long$month, 
                                     levels = c(1,2,3,4,5,6,7,8,9,10,11,12), 
                                     labels = c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))
+
 
 #create date variable for TropFishR
 #multiple monthly sample events justify bimonthly sample units
